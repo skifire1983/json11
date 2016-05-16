@@ -60,6 +60,11 @@ static void dump(int value, string &out) {
     snprintf(buf, sizeof buf, "%d", value);
     out += buf;
 }
+static void dump(int64_t value, string &out) {
+	char buf[32];
+	snprintf(buf, sizeof buf, "%lld", value);
+	out += buf;
+}
 
 static void dump(bool value, string &out) {
     out += value ? "true" : "false";
@@ -164,6 +169,7 @@ protected:
 class JsonDouble final : public Value<Json::NUMBER, double> {
     double number_value() const override { return m_value; }
     int int_value() const override { return static_cast<int>(m_value); }
+	  int64_t int64_value() const override { return static_cast<int64_t>(m_value); }
     bool equals(const JsonValue * other) const override { return m_value == other->number_value(); }
     bool less(const JsonValue * other)   const override { return m_value <  other->number_value(); }
 public:
@@ -173,11 +179,23 @@ public:
 class JsonInt final : public Value<Json::NUMBER, int> {
     double number_value() const override { return m_value; }
     int int_value() const override { return m_value; }
+	  int64_t int64_value() const override { return m_value; }
     bool equals(const JsonValue * other) const override { return m_value == other->number_value(); }
     bool less(const JsonValue * other)   const override { return m_value <  other->number_value(); }
 public:
     explicit JsonInt(int value) : Value(value) {}
 };
+
+class JsonInt64 final : public Value<Json::NUMBER, int64_t> {
+	double number_value() const override { return static_cast<double>(m_value); }
+	int int_value() const override { return static_cast<int>(m_value); }
+	int64_t int64_value() const override { return m_value; }
+	bool equals(const JsonValue * other) const override { return m_value == other->number_value(); }
+	bool less(const JsonValue * other)   const override { return m_value < other->number_value(); }
+public:
+	explicit JsonInt64(int64_t value) : Value(value) {}
+};
+
 
 class JsonBoolean final : public Value<Json::BOOL, bool> {
     bool bool_value() const override { return m_value; }
@@ -245,6 +263,7 @@ Json::Json() noexcept                  : m_ptr(statics().null) {}
 Json::Json(std::nullptr_t) noexcept    : m_ptr(statics().null) {}
 Json::Json(double value)               : m_ptr(make_shared<JsonDouble>(value)) {}
 Json::Json(int value)                  : m_ptr(make_shared<JsonInt>(value)) {}
+Json::Json(int64_t value)              : m_ptr(make_shared<JsonInt64>(value)) {}
 Json::Json(bool value)                 : m_ptr(value ? statics().t : statics().f) {}
 Json::Json(const string &value)        : m_ptr(make_shared<JsonString>(value)) {}
 Json::Json(string &&value)             : m_ptr(make_shared<JsonString>(move(value))) {}
@@ -261,6 +280,7 @@ Json::Json(Json::object &&values)      : m_ptr(make_shared<JsonObject>(move(valu
 Json::Type Json::type()                           const { return m_ptr->type();         }
 double Json::number_value()                       const { return m_ptr->number_value(); }
 int Json::int_value()                             const { return m_ptr->int_value();    }
+int64_t Json::int64_value()                       const { return m_ptr->int64_value();  }
 bool Json::bool_value()                           const { return m_ptr->bool_value();   }
 const string & Json::string_value()               const { return m_ptr->string_value(); }
 const vector<Json> & Json::array_items()          const { return m_ptr->array_items();  }
@@ -270,6 +290,7 @@ const Json & Json::operator[] (const string &key) const { return (*m_ptr)[key]; 
 
 double                    JsonValue::number_value()              const { return 0; }
 int                       JsonValue::int_value()                 const { return 0; }
+int64_t                   JsonValue::int64_value()               const { return 0; }
 bool                      JsonValue::bool_value()                const { return false; }
 const string &            JsonValue::string_value()              const { return statics().empty_string; }
 const vector<Json> &      JsonValue::array_items()               const { return statics().empty_vector; }
@@ -375,38 +396,38 @@ struct JsonParser final {
       if (str[i] == '/') {
         i++;
         if (i == str.size())
-          return fail("unexpected end of input inside comment", 0);
+          return !!fail("unexpected end of input inside comment", 0);
         if (str[i] == '/') { // inline comment
           i++;
           if (i == str.size())
-            return fail("unexpected end of input inside inline comment", 0);
+            return !!fail("unexpected end of input inside inline comment", 0);
           // advance until next line
           while (str[i] != '\n') {
             i++;
             if (i == str.size())
-              return fail("unexpected end of input inside inline comment", 0);
+              return !!fail("unexpected end of input inside inline comment", 0);
           }
           comment_found = true;
         }
         else if (str[i] == '*') { // multiline comment
           i++;
           if (i > str.size()-2)
-            return fail("unexpected end of input inside multi-line comment", 0);
+            return !!fail("unexpected end of input inside multi-line comment", 0);
           // advance until closing tokens
           while (!(str[i] == '*' && str[i+1] == '/')) {
             i++;
             if (i > str.size()-2)
-              return fail(
+              return !!fail(
                 "unexpected end of input inside multi-line comment", 0);
           }
           i += 2;
           if (i == str.size())
-            return fail(
+            return !!fail(
               "unexpected end of input inside multi-line comment", 0);
           comment_found = true;
         }
         else
-          return fail("malformed comment", 0);
+          return !!fail("malformed comment", 0);
       }
       return comment_found;
     }
@@ -582,8 +603,14 @@ struct JsonParser final {
         }
 
         if (str[i] != '.' && str[i] != 'e' && str[i] != 'E'
-                && (i - start_pos) <= static_cast<size_t>(std::numeric_limits<int>::digits10)) {
-            return std::atoi(str.c_str() + start_pos);
+                && (i - start_pos) <= static_cast<size_t>(std::numeric_limits<int64_t>::digits10)) {
+            const int64_t value = std::atoll(str.c_str() + start_pos);
+
+      			if (value >= std::numeric_limits<int>::min() && value <= std::numeric_limits<int>::max()) {
+      			    return static_cast<int>(value);
+      			}
+
+			      return value;
         }
 
         // Decimal part
