@@ -80,6 +80,7 @@ public:
     Json(std::nullptr_t) noexcept;  // NUL
     Json(double value);             // NUMBER
     Json(int value);                // NUMBER
+  	Json(int64_t value);            // NUMBER
     Json(bool value);               // BOOL
     Json(const std::string &value); // STRING
     Json(std::string &&value);      // STRING
@@ -125,6 +126,7 @@ public:
     // can both be applied to a NUMBER-typed object.
     double number_value() const;
     int int_value() const;
+    int64_t int64_value() const;
 
     // Return the enclosed value if this is a boolean, false otherwise.
     bool bool_value() const;
@@ -201,6 +203,7 @@ class JsonValue {
 protected:
     friend class Json;
     friend class JsonInt;
+	  friend class JsonInt64;
     friend class JsonDouble;
     virtual Json::Type type() const = 0;
     virtual bool equals(const JsonValue * other) const = 0;
@@ -208,6 +211,7 @@ protected:
     virtual void dump(std::string &out) const = 0;
     virtual double number_value() const;
     virtual int int_value() const;
+    virtual int64_t int64_value() const;
     virtual bool bool_value() const;
     virtual const std::string &string_value() const;
     virtual const Json::array &array_items() const;
